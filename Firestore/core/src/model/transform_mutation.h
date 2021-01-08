@@ -52,11 +52,6 @@ class TransformMutation : public Mutation {
   /** Creates an invalid TransformMutation instance. */
   TransformMutation() = default;
 
-  /** Returns the field transforms to use when transforming the document. */
-  const std::vector<FieldTransform>& field_transforms() const {
-    return set_rep().field_transforms();
-  }
-
  private:
   class Rep : public Mutation::Rep {
    public:
@@ -64,10 +59,6 @@ class TransformMutation : public Mutation {
 
     Type type() const override {
       return Type::Transform;
-    }
-
-    const std::vector<FieldTransform>& field_transforms() const {
-      return field_transforms_;
     }
 
     MaybeDocument ApplyToRemoteDocument(
@@ -80,49 +71,13 @@ class TransformMutation : public Mutation {
         const Timestamp&) const override;
 
     absl::optional<ObjectValue> ExtractBaseValue(
-        const absl::optional<MaybeDocument>& maybe_doc) const override;
+        const absl::optional<MaybeDocument>& maybe_doc) const;
 
     bool Equals(const Mutation::Rep& other) const override;
 
     std::string ToString() const override;
 
    private:
-    /**
-     * Creates an array of "transform results" (a transform result is a field
-     * value representing the result of applying a transform) for use after a
-     * TransformMutation has been acknowledged by the server.
-     *
-     * @param base_doc The document prior to applying this mutation batch.
-     * @param server_transform_results The transform results received by the
-     *     server.
-     * @return The transform results array.
-     */
-    std::vector<FieldValue> ServerTransformResults(
-        const absl::optional<MaybeDocument>& base_doc,
-        const std::vector<FieldValue>& server_transform_results) const;
-
-    /**
-     * Creates an array of "transform results" (a transform result is a field
-     * value representing the result of applying a transform) for use when
-     * applying an TransformMutation locally.
-     *
-     * @param maybe_doc The current state of the document after applying all
-     *     previous mutations.
-     * @param base_doc The document prior to applying this mutation batch.
-     * @param local_write_time The local time of the transform mutation (used to
-     *     generate ServerTimestampValues).
-     * @return The transform results array.
-     */
-    std::vector<FieldValue> LocalTransformResults(
-        const absl::optional<MaybeDocument>& maybe_doc,
-        const absl::optional<MaybeDocument>& base_doc,
-        const Timestamp& local_write_time) const;
-
-    ObjectValue TransformObject(
-        ObjectValue object_value,
-        const std::vector<FieldValue>& transform_results) const;
-
-    std::vector<FieldTransform> field_transforms_;
     FieldMask field_mask_;
   };
 

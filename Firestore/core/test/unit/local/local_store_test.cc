@@ -1084,32 +1084,30 @@ TEST_P(LocalStoreTest, RemoteDocumentKeysForTarget) {
 // probably be better implemented as spec tests but currently they don't support
 // transforms.
 
-TEST_P(LocalStoreTest,
-       HandlesSetMutationThenTransformMutationThenTransformMutation) {
+TEST_P(LocalStoreTest, HandlesSetMutationThenTransformThenTransform) {
   WriteMutation(testutil::SetMutation("foo/bar", Map("sum", 0)));
   FSTAssertContains(
       Doc("foo/bar", 0, Map("sum", 0), DocumentState::kLocalMutations));
   FSTAssertChanged(
       Doc("foo/bar", 0, Map("sum", 0), DocumentState::kLocalMutations));
 
-  WriteMutation(testutil::TransformMutation(
-      "foo/bar", {testutil::Increment("sum", Value(1))}));
+  WriteMutation(testutil::PatchMutation(
+      "foo/bar", Map(), {}, {testutil::Increment("sum", Value(1))}));
   FSTAssertContains(
       Doc("foo/bar", 0, Map("sum", 1), DocumentState::kLocalMutations));
   FSTAssertChanged(
       Doc("foo/bar", 0, Map("sum", 1), DocumentState::kLocalMutations));
 
-  WriteMutation(testutil::TransformMutation(
-      "foo/bar", {testutil::Increment("sum", Value(2))}));
+  WriteMutation(testutil::PatchMutation(
+      "foo/bar", Map(), {}, {testutil::Increment("sum", Value(2))}));
   FSTAssertContains(
       Doc("foo/bar", 0, Map("sum", 3), DocumentState::kLocalMutations));
   FSTAssertChanged(
       Doc("foo/bar", 0, Map("sum", 3), DocumentState::kLocalMutations));
 }
 
-TEST_P(
-    LocalStoreTest,
-    HandlesSetMutationThenAckThenTransformMutationThenAckThenTransformMutation) {  // NOLINT
+TEST_P(LocalStoreTest,
+       HandlesSetMutationThenAckThenTransformThenAckThenTransform) {  // NOLINT
   // Since this test doesn't start a listen, Eager GC removes the documents from
   // the cache as soon as the mutation is applied. This creates a lot of special
   // casing in this unit test but does not expand its test coverage.
@@ -1127,8 +1125,8 @@ TEST_P(
   FSTAssertChanged(
       Doc("foo/bar", 1, Map("sum", 0), DocumentState::kCommittedMutations));
 
-  WriteMutation(testutil::TransformMutation(
-      "foo/bar", {testutil::Increment("sum", Value(1))}));
+  WriteMutation(testutil::PatchMutation(
+      "foo/bar", Map(), {}, {testutil::Increment("sum", Value(1))}));
   FSTAssertContains(
       Doc("foo/bar", 1, Map("sum", 1), DocumentState::kLocalMutations));
   FSTAssertChanged(
@@ -1140,8 +1138,8 @@ TEST_P(
   FSTAssertChanged(
       Doc("foo/bar", 2, Map("sum", 1), DocumentState::kCommittedMutations));
 
-  WriteMutation(testutil::TransformMutation(
-      "foo/bar", {testutil::Increment("sum", Value(2))}));
+  WriteMutation(testutil::PatchMutation(
+      "foo/bar", Map(), {}, {testutil::Increment("sum", Value(2))}));
   FSTAssertContains(
       Doc("foo/bar", 2, Map("sum", 3), DocumentState::kLocalMutations));
   FSTAssertChanged(
@@ -1318,9 +1316,8 @@ TEST_P(LocalStoreTest, QueriesFilterDocumentsThatNoLongerMatch) {
   FSTAssertQueryReturned("foo/a");
 }
 
-TEST_P(
-    LocalStoreTest,
-    HandlesSetMutationThenTransformMutationThenRemoteEventThenTransformMutation) {  // NOLINT
+TEST_P(LocalStoreTest,
+       HandlesSetMutationThenTransformThenRemoteEventThenTransform) {  // NOLINT
   core::Query query = Query("foo");
   AllocateQuery(query);
   FSTAssertTargetID(2);
@@ -1337,8 +1334,8 @@ TEST_P(
   FSTAssertContains(Doc("foo/bar", 1, Map("sum", 0)));
   FSTAssertChanged(Doc("foo/bar", 1, Map("sum", 0)));
 
-  WriteMutation(testutil::TransformMutation(
-      "foo/bar", {testutil::Increment("sum", Value(1))}));
+  WriteMutation(testutil::PatchMutation(
+      "foo/bar", Map(), {}, {testutil::Increment("sum", Value(1))}));
   FSTAssertContains(
       Doc("foo/bar", 1, Map("sum", 1), DocumentState::kLocalMutations));
   FSTAssertChanged(
@@ -1355,8 +1352,8 @@ TEST_P(
 
   // Add another increment. Note that we still compute the increment based on
   // the local value.
-  WriteMutation(testutil::TransformMutation(
-      "foo/bar", {testutil::Increment("sum", Value(2))}));
+  WriteMutation(testutil::PatchMutation(
+      "foo/bar", Map(), {}, {testutil::Increment("sum", Value(2))}));
   FSTAssertContains(
       Doc("foo/bar", 2, Map("sum", 3), DocumentState::kLocalMutations));
   FSTAssertChanged(
@@ -1393,11 +1390,19 @@ TEST_P(LocalStoreTest, HoldsBackOnlyNonIdempotentTransforms) {
       Doc("foo/bar", 1, Map("sum", 0, "array_union", Array())), {2}));
   FSTAssertChanged(Doc("foo/bar", 1, Map("sum", 0, "array_union", Array())));
 
+  //  WriteMutations({
+  //      testutil::TransformMutation("foo/bar",
+  //                                  {testutil::Increment("sum", Value(1))}),
+  //      testutil::TransformMutation(
+  //          "foo/bar", {testutil::ArrayUnion("array_union", {Value("foo")})}),
+  //  });
+
   WriteMutations({
-      testutil::TransformMutation("foo/bar",
-                                  {testutil::Increment("sum", Value(1))}),
-      testutil::TransformMutation(
-          "foo/bar", {testutil::ArrayUnion("array_union", {Value("foo")})}),
+      testutil::PatchMutation("foo/bar", Map(), {},
+                              {testutil::Increment("sum", Value(1))}),
+      testutil::PatchMutation(
+          "foo/bar", Map(), {},
+          {testutil::ArrayUnion("array_union", {Value("foo")})}),
   });
 
   FSTAssertChanged(Doc("foo/bar", 1, Map("sum", 1, "array_union", Array("foo")),
@@ -1419,12 +1424,16 @@ TEST_P(LocalStoreTest, HandlesMergeMutationWithTransformThenRemoteEvent) {
   AllocateQuery(query);
   FSTAssertTargetID(2);
 
-  WriteMutations({
-      testutil::PatchMutation("foo/bar", Map(),
-                              {firebase::firestore::testutil::Field("sum")}),
-      testutil::TransformMutation("foo/bar",
-                                  {testutil::Increment("sum", Value(1))}),
-  });
+  //  WriteMutations({
+  //      testutil::PatchMutation("foo/bar", Map(),
+  //                              {firebase::firestore::testutil::Field("sum")}),
+  //      testutil::TransformMutation("foo/bar",
+  //                                  {testutil::Increment("sum", Value(1))}),
+  //  });
+
+  WriteMutation(
+      testutil::PatchMutation("foo/bar", Map(), std::vector<model::FieldPath>(),
+                              {testutil::Increment("sum", Value(1))}));
 
   FSTAssertContains(
       Doc("foo/bar", 0, Map("sum", 1), DocumentState::kLocalMutations));
@@ -1446,9 +1455,13 @@ TEST_P(LocalStoreTest, HandlesPatchMutationWithTransformThenRemoteEvent) {
 
   WriteMutations({
       testutil::PatchMutation("foo/bar", Map(), {}),
-      testutil::TransformMutation("foo/bar",
-                                  {testutil::Increment("sum", Value(1))}),
+      testutil::PatchMutation("foo/bar", Map(), {},
+                              {testutil::Increment("sum", Value(1))}),
   });
+
+  WriteMutation(
+      testutil::PatchMutation("foo/bar", Map(), std::vector<model::FieldPath>(),
+                              {testutil::Increment("sum", Value(1))}));
 
   FSTAssertNotContains("foo/bar");
   FSTAssertChanged(DeletedDoc("foo/bar"));

@@ -306,19 +306,45 @@ core::Query CollectionGroupQuery(absl::string_view collection_id) {
                      std::make_shared<const std::string>(collection_id));
 }
 
-model::SetMutation SetMutation(absl::string_view path,
-                               const model::FieldValue::Map& values) {
+// TODO(chenbrian): Rewrite SetMutation helper to allow parsing of field
+// transforms directly in the `values` parameter once the UserDataReader/
+// UserDataWriter changes are ported from Web and Android.
+model::SetMutation SetMutation(
+    absl::string_view path,
+    const model::FieldValue::Map& values,
+    std::vector<std::pair<std::string, TransformOperation>> transforms) {
+  std::vector<FieldTransform> field_transforms;
+  for (auto&& pair : transforms) {
+    auto field_path = Field(std::move(pair.first));
+    TransformOperation&& op_ptr = std::move(pair.second);
+    FieldTransform transform(std::move(field_path), std::move(op_ptr));
+    field_transforms.push_back(std::move(transform));
+  }
+
   return model::SetMutation(Key(path), model::ObjectValue::FromMap(values),
-                            model::Precondition::None());
+                            model::Precondition::None(),
+                            std::move(field_transforms));
 }
 
+// TODO(chenbrian): Rewrite PatchMutation helper to allow parsing of field
+// transforms directly in the `values` parameter once the UserDataReader/
+// UserDataWriter changes are ported from Web and Android.
 model::PatchMutation PatchMutation(
     absl::string_view path,
-    FieldValue::Map values,
+    const FieldValue::Map& values,
     // TODO(rsgowman): Investigate changing update_mask to a set.
-    std::vector<model::FieldPath> update_mask) {
+    const std::vector<model::FieldPath>& update_mask,
+    std::vector<std::pair<std::string, TransformOperation>> transforms) {
   ObjectValue object_value = ObjectValue::Empty();
   std::set<FieldPath> field_mask_paths;
+
+  std::vector<FieldTransform> field_transforms;
+  for (auto&& pair : transforms) {
+    auto field_path = Field(std::move(pair.first));
+    TransformOperation&& op_ptr = std::move(pair.second);
+    FieldTransform transform(std::move(field_path), std::move(op_ptr));
+    field_transforms.push_back(std::move(transform));
+  }
 
   for (const auto& kv : values) {
     FieldPath field_path = Field(kv.first);
@@ -339,7 +365,8 @@ model::PatchMutation PatchMutation(
             : field_mask_paths);
 
   return model::PatchMutation(Key(path), std::move(object_value),
-                              std::move(mask), precondition);
+                              std::move(mask), precondition,
+                              std::move(field_transforms));
 }
 
 model::TransformMutation TransformMutation(

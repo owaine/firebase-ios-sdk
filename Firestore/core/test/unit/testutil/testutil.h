@@ -296,12 +296,16 @@ core::Query CollectionGroupQuery(absl::string_view collection_id);
 
 model::SetMutation SetMutation(
     absl::string_view path,
-    const model::FieldValue::Map& values = model::FieldValue::Map());
+    const model::FieldValue::Map& values = model::FieldValue::Map(),
+    std::vector<std::pair<std::string, model::TransformOperation>> transforms =
+        {});
 
 model::PatchMutation PatchMutation(
     absl::string_view path,
-    model::FieldValue::Map values = model::FieldValue::Map(),
-    std::vector<model::FieldPath> update_mask = {});
+    const model::FieldValue::Map& values = model::FieldValue::Map(),
+    const std::vector<model::FieldPath>& update_mask = {},
+    std::vector<std::pair<std::string, model::TransformOperation>> transforms =
+        {});
 
 model::TransformMutation TransformMutation(
     absl::string_view path,

@@ -19,6 +19,7 @@
 #include <pb_decode.h>
 #include <pb_encode.h>
 
+#include <Firestore/core/src/model/transform_mutation.h>
 #include <algorithm>
 #include <functional>
 #include <limits>
@@ -43,7 +44,6 @@
 #include "Firestore/core/src/model/patch_mutation.h"
 #include "Firestore/core/src/model/resource_path.h"
 #include "Firestore/core/src/model/set_mutation.h"
-#include "Firestore/core/src/model/transform_mutation.h"
 #include "Firestore/core/src/model/verify_mutation.h"
 #include "Firestore/core/src/nanopb/byte_string.h"
 #include "Firestore/core/src/nanopb/nanopb_util.h"
@@ -588,6 +588,18 @@ google_firestore_v1_Write Serializer::EncodeMutation(
     result.current_document = EncodePrecondition(mutation.precondition());
   }
 
+  pb_size_t count = CheckedSize(mutation.field_transforms().size());
+  result.update_transforms_count = count;
+  result.update_transforms =
+      MakeArray<google_firestore_v1_DocumentTransform_FieldTransform>(count);
+  int i = 0;
+  auto crazy = mutation.field_transforms();
+  auto crazy2 = mutation.key();
+  for (const FieldTransform& field_transform : mutation.field_transforms()) {
+    result.update_transforms[i] = EncodeFieldTransform(field_transform);
+    i++;
+  }
+
   switch (mutation.type()) {
     case Mutation::Type::Set: {
       result.which_operation = google_firestore_v1_Write_update_tag;
@@ -615,17 +627,17 @@ google_firestore_v1_Write Serializer::EncodeMutation(
       auto transform = static_cast<const TransformMutation&>(mutation);
       result.transform.document = EncodeKey(transform.key());
 
-      pb_size_t count = CheckedSize(transform.field_transforms().size());
-      result.transform.field_transforms_count = count;
+      pb_size_t count2 = CheckedSize(transform.field_transforms().size());
+      result.transform.field_transforms_count = count2;
       result.transform.field_transforms =
           MakeArray<google_firestore_v1_DocumentTransform_FieldTransform>(
               count);
-      int i = 0;
+      int j = 0;
       for (const FieldTransform& field_transform :
            transform.field_transforms()) {
-        result.transform.field_transforms[i] =
+        result.transform.field_transforms[j] =
             EncodeFieldTransform(field_transform);
-        i++;
+        j++;
       }
 
       // NOTE: We set a precondition of exists: true as a safety-check, since we
@@ -660,6 +672,12 @@ Mutation Serializer::DecodeMutation(
     precondition = DecodePrecondition(reader, mutation.current_document);
   }
 
+  std::vector<FieldTransform> field_transforms;
+  for (size_t i = 0; i < mutation.update_transforms_count; i++) {
+    field_transforms.push_back(
+        DecodeFieldTransform(reader, mutation.update_transforms[i]));
+  }
+
   switch (mutation.which_operation) {
     case google_firestore_v1_Write_update_tag: {
       DocumentKey key = DecodeKey(reader, mutation.update.name);
@@ -668,10 +686,12 @@ Mutation Serializer::DecodeMutation(
       if (mutation.has_update_mask) {
         FieldMask mask = DecodeFieldMask(reader, mutation.update_mask);
         return PatchMutation(std::move(key), std::move(value), std::move(mask),
-                             std::move(precondition));
+                             std::move(precondition),
+                             std::move(field_transforms));
       } else {
         return SetMutation(std::move(key), std::move(value),
-                           std::move(precondition));
+                           std::move(precondition),
+                           std::move(field_transforms));
       }
     }
 
@@ -679,20 +699,23 @@ Mutation Serializer::DecodeMutation(
       return DeleteMutation(DecodeKey(reader, mutation.delete_),
                             std::move(precondition));
 
-    case google_firestore_v1_Write_transform_tag: {
-      std::vector<FieldTransform> field_transforms;
-      for (size_t i = 0; i < mutation.transform.field_transforms_count; i++) {
-        field_transforms.push_back(DecodeFieldTransform(
-            reader, mutation.transform.field_transforms[i]));
-      }
-
-      HARD_ASSERT(precondition.type() == Precondition::Type::Exists &&
-                      precondition.exists(),
-                  "Transforms only support precondition \"exists == true\"");
-
-      return TransformMutation(DecodeKey(reader, mutation.transform.document),
-                               field_transforms);
-    }
+      //    case google_firestore_v1_Write_transform_tag: {
+      //      std::vector<FieldTransform> field_transforms;
+      //      for (size_t i = 0; i < mutation.transform.field_transforms_count;
+      //      i++) {
+      //        field_transforms.push_back(DecodeFieldTransform(
+      //            reader, mutation.transform.field_transforms[i]));
+      //      }
+      //
+      //      HARD_ASSERT(precondition.type() == Precondition::Type::Exists &&
+      //                      precondition.exists(),
+      //                  "Transforms only support precondition \"exists ==
+      //                  true\"");
+      //
+      //      return TransformMutation(DecodeKey(reader,
+      //      mutation.transform.document),
+      //                               field_transforms);
+      //    }
 
     case google_firestore_v1_Write_verify_tag: {
       return VerifyMutation(DecodeKey(reader, mutation.verify),
